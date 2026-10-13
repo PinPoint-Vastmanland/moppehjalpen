@@ -1,0 +1,391 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Service = {
+  id: string;
+  name: string;
+  description: string;
+  price?: string | null;
+  active: boolean;
+};
+
+type Booking = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  brandModel: string;
+  serviceId?: string | null;
+  description: string;
+  preferredDate: string;
+  preferredTime: string;
+  status: string;
+  termsAccepted: boolean;
+  notes?: string | null;
+};
+
+type GalleryItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  beforeAfter: boolean;
+  images: string[];
+};
+
+type SettingMap = {
+  [key: string]: string;
+};
+
+export default function AdminDashboard() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [services, setServices] = useState<Service[]>([]);
+  const [gallery, setGallery] = useState<GalleryItem[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [settings, setSettings] = useState<SettingMap>({});
+  const [availability, setAvailability] = useState<{ id: string; date: string; startTime: string; endTime: string; reason?: string | null; isBooked: boolean }[]>([]);
+
+  const loadData = async () => {
+    const [servicesRes, bookingsRes, galleryRes, settingsRes, availabilityRes] = await Promise.all([
+      fetch("/api/services"),
+      fetch("/api/bookings"),
+      fetch("/api/gallery"),
+      fetch("/api/settings"),
+      fetch("/api/availability"),
+    ]);
+
+    if ([servicesRes, bookingsRes, galleryRes, settingsRes, availabilityRes].some((res) => !res.ok)) {
+      router.push("/admin/login");
+      return;
+    }
+
+    setServices(await servicesRes.json());
+    setBookings(await bookingsRes.json());
+    setGallery(await galleryRes.json());
+    setSettings(await settingsRes.json());
+    setAvailability(await availabilityRes.json());
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetch("/api/admin/session")
+      .then((res) => {
+        if (!res.ok) {
+          router.push("/admin/login");
+          return;
+        }
+        loadData();
+      })
+      .catch(() => router.push("/admin/login"));
+  }, [router]);
+
+  const handleLogout = async () => {
+    await fetch("/api/admin/logout", { method: "POST" });
+    router.push("/admin/login");
+  };
+
+  if (loading) {
+    return <main className="auth-shell"><p>Laddar administratörspanel...</p></main>;
+  }
+
+  return (
+    <main className="admin-shell">
+      <header className="admin-header">
+        <div>
+          <p className="eyebrow">Administratörspanel</p>
+          <h1>Moppehjälpen</h1>
+        </div>
+        <button className="btn btn-primary" onClick={handleLogout}>Logga ut</button>
+      </header>
+
+      <section className="admin-stats">
+        <div className="stat-card"><span>Totalt</span><strong>{bookings.length}</strong></div>
+        <div className="stat-card"><span>Väntar</span><strong>{bookings.filter((b) => b.status === "pending").length}</strong></div>
+        <div className="stat-card"><span>Godkända</span><strong>{bookings.filter((b) => b.status === "approved").length}</strong></div>
+        <div className="stat-card"><span>Galleri</span><strong>{gallery.length}</strong></div>
+      </section>
+
+      <section className="admin-grid">
+        <div className="panel">
+          <h2>Bokningar</h2>
+          {bookings.length === 0 ? <p>Inga bokningar ännu.</p> : (
+            <div className="stack-list">
+              {bookings.map((booking) => (
+                <BookingCard
+                  key={booking.id}
+                  booking={booking}
+                  onChange={async (status, notes) => {
+                    const response = await fetch(`/api/bookings/${booking.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status, notes }),
+                    });
+                    if (response.ok) loadData();
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <h2>Hantera tjänster</h2>
+          <ServiceForm
+            onCreated={async () => loadData()}
+          />
+          <div className="stack-list">
+            {services.map((service) => (
+              <div key={service.id} className="mini-editor">
+                <input defaultValue={service.name} id={`name-${service.id}`} />
+                <textarea defaultValue={service.description} id={`desc-${service.id}`} rows={3} />
+                <input defaultValue={service.price || ""} id={`price-${service.id}`} placeholder="Pris eller Kontakt för offert" />
+                <div className="inline-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      const payload = {
+                        name: (document.getElementById(`name-${service.id}`) as HTMLInputElement).value,
+                        description: (document.getElementById(`desc-${service.id}`) as HTMLTextAreaElement).value,
+                        price: (document.getElementById(`price-${service.id}`) as HTMLInputElement).value,
+                      };
+                      await fetch(`/api/services/${service.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                      });
+                      loadData();
+                    }}
+                  >
+                    Spara
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      await fetch(`/api/services/${service.id}`, { method: "DELETE" });
+                      loadData();
+                    }}
+                  >
+                    Ta bort
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="admin-grid">
+        <div className="panel">
+          <h2>Galleri</h2>
+          <GalleryForm onCreated={async () => loadData()} />
+          <div className="stack-list">
+            {gallery.map((item) => (
+              <div key={item.id} className="gallery-editor-item">
+                <img src={item.images[0]} alt={item.title} />
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.description}</p>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      await fetch(`/api/gallery/${item.id}`, { method: "DELETE" });
+                      loadData();
+                    }}
+                  >
+                    Ta bort projekt
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>Inställningar</h2>
+          <SettingsForm
+            initial={settings}
+            onSaved={async () => loadData()}
+          />
+
+          <h3>Upptagna tider</h3>
+          <AvailabilityForm onSaved={async () => loadData()} />
+          <div className="stack-list">
+            {availability.map((slot) => (
+              <div key={slot.id} className="mini-editor">
+                <strong>{slot.date} {slot.startTime} - {slot.endTime}</strong>
+                <p>{slot.reason || "Upptagen tid"}</p>
+                <button
+                  className="btn btn-secondary"
+                  onClick={async () => {
+                    await fetch(`/api/availability/${slot.id}`, { method: "DELETE" });
+                    loadData();
+                  }}
+                >
+                  Ta bort
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function BookingCard({ booking, onChange }: { booking: Booking; onChange: (status: string, notes: string) => Promise<void> }) {
+  const [status, setStatus] = useState(booking.status);
+  const [notes, setNotes] = useState(booking.notes || "");
+
+  return (
+    <div className="booking-admin-card">
+      <div className="booking-top">
+        <div>
+          <h3>{booking.name}</h3>
+          <p>{booking.brandModel}</p>
+        </div>
+        <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      <p>{booking.email} • {booking.phone}</p>
+      <p>{booking.preferredDate} kl. {booking.preferredTime}</p>
+      <p>{booking.description}</p>
+      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+      <button className="btn btn-primary" onClick={() => onChange(status, notes)}>Uppdatera</button>
+    </div>
+  );
+}
+
+function ServiceForm({ onCreated }: { onCreated: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("");
+
+  const submit = async () => {
+    await fetch("/api/services", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description, price }),
+    });
+    setName("");
+    setDescription("");
+    setPrice("");
+    onCreated();
+  };
+
+  return (
+    <div className="add-form">
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tjänstnamn" />
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Beskrivning" rows={3} />
+      <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Pris eller kontakt för offert" />
+      <button className="btn btn-primary" onClick={submit}>Lägg till tjänst</button>
+    </div>
+  );
+}
+
+function GalleryForm({ onCreated }: { onCreated: () => Promise<void> }) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [beforeAfter, setBeforeAfter] = useState(false);
+  const [images, setImages] = useState<string[]>([]);
+
+  const handleFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    const reads = files.map((file) => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.readAsDataURL(file);
+    }));
+    setImages(await Promise.all(reads));
+  };
+
+  const submit = async () => {
+    await fetch("/api/gallery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description, beforeAfter, images }),
+    });
+    setTitle("");
+    setDescription("");
+    setBeforeAfter(false);
+    setImages([]);
+    onCreated();
+  };
+
+  return (
+    <div className="add-form">
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Projektets titel" />
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Kort beskrivning" rows={3} />
+      <label className="checkbox-row">
+        <input type="checkbox" checked={beforeAfter} onChange={(e) => setBeforeAfter(e.target.checked)} />
+        Före- och efterprojekt
+      </label>
+      <input type="file" multiple accept="image/*" onChange={handleFiles} />
+      <button className="btn btn-primary" onClick={submit}>Lägg till projekt</button>
+    </div>
+  );
+}
+
+function SettingsForm({ initial, onSaved }: { initial: SettingMap; onSaved: () => Promise<void> }) {
+  const [state, setState] = useState<SettingMap>(initial);
+
+  useEffect(() => {
+    setState(initial);
+  }, [initial]);
+
+  const submit = async () => {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    });
+    onSaved();
+  };
+
+  return (
+    <div className="add-form">
+      <input value={state.email || ""} onChange={(e) => setState({ ...state, email: e.target.value })} placeholder="E-post" />
+      <input value={state.instagram || ""} onChange={(e) => setState({ ...state, instagram: e.target.value })} placeholder="Instagram" />
+      <input value={state.tiktok || ""} onChange={(e) => setState({ ...state, tiktok: e.target.value })} placeholder="TikTok" />
+      <input value={state.phone || ""} onChange={(e) => setState({ ...state, phone: e.target.value })} placeholder="Telefonnummer" />
+      <input value={state.address || ""} onChange={(e) => setState({ ...state, address: e.target.value })} placeholder="Adress / arbetsområde" />
+      <input value={state.openingHours || ""} onChange={(e) => setState({ ...state, openingHours: e.target.value })} placeholder="Öppettider" />
+      <button className="btn btn-primary" onClick={submit}>Spara inställningar</button>
+    </div>
+  );
+}
+
+function AvailabilityForm({ onSaved }: { onSaved: () => Promise<void> }) {
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [reason, setReason] = useState("");
+
+  const save = async () => {
+    await fetch("/api/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, startTime, endTime, reason, isBooked: true }),
+    });
+    setDate("");
+    setStartTime("");
+    setEndTime("");
+    setReason("");
+    onSaved();
+  };
+
+  return (
+    <div className="add-form">
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+      <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Anledning, exempel 'Semester'" />
+      <button className="btn btn-primary" onClick={save}>Lägg till upptagen tid</button>
+    </div>
+  );
+}

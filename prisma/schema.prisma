@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  price       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model GalleryItem {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  beforeAfter Boolean  @default(false)
+  images      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Booking {
+  id               String    @id @default(cuid())
+  name             String
+  phone            String
+  email            String
+  brandModel       String
+  modelYear        String?
+  serviceId        String?
+  description      String
+  preferredDate    String
+  preferredTime    String
+  attachments      String?
+  status           String    @default("pending")
+  termsAccepted    Boolean   @default(false)
+  termsAcceptedAt  DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model AvailabilitySlot {
+  id          String   @id @default(cuid())
+  date        String
+  startTime   String
+  endTime     String
+  reason      String?
+  isBooked    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
